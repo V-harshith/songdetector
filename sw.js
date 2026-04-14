@@ -1,6 +1,6 @@
 const CACHE_NAME = 'song-detector-v1';
 const SHARE_CACHE = 'song-detector-share';
-const APP_SHELL = ['/', '/index.html', '/manifest.json'];
+const APP_SHELL = ['./', './index.html', 'manifest.json'];
 
 // ── Install ──────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -28,7 +28,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
   // Intercept the share-target POST
-  if (url.pathname === '/share-target' && event.request.method === 'POST') {
+  if (url.pathname.endsWith('/share-target') && event.request.method === 'POST') {
     event.respondWith(handleShareTarget(event.request));
     return;
   }
@@ -37,7 +37,7 @@ self.addEventListener('fetch', event => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() =>
-        caches.match('/index.html')
+        caches.match('./index.html')
       )
     );
     return;
@@ -77,5 +77,5 @@ async function handleShareTarget(request) {
   }
 
   // Redirect back to app with flag
-  return Response.redirect('/?shared=1', 303);
+  return Response.redirect('./?shared=1', 303);
 }

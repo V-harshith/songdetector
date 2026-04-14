@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="SongID" />
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Song Detector</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet" />
@@ -439,7 +439,7 @@
 //  Service Worker Registration
 // ══════════════════════════════════════════════
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(reg => {
+  navigator.serviceWorker.register('sw.js').then(reg => {
     console.log('[App] SW registered', reg.scope);
   }).catch(err => console.warn('[App] SW failed', err));
 
@@ -476,7 +476,7 @@ $apiKey.addEventListener('input', () => localStorage.setItem('audd_key', $apiKey
 // ══════════════════════════════════════════════
 window.addEventListener('load', () => {
   if (location.search.includes('shared=1')) {
-    history.replaceState({}, '', '/');
+    history.replaceState({}, '', location.pathname);
     loadSharedVideo();
   }
 });
