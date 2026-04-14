@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#c8962a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SongID" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <title>Song Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111019;
+      --border: #1e1c14;
+      --border-hover: #3a3020;
+      --gold: #c8962a;
+      --gold-light: #e8b84a;
+      --text: #f0e6cc;
+      --text-muted: #7a6a50;
+      --text-dim: #3a3020;
+      --red: #c8503a;
+      --green: #4a9a5a;
+      --radius: 16px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      overflow-x: hidden;
+    }
+
+    body {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 48px 20px calc(32px + var(--safe-bottom));
+      position: relative;
+    }
+
+    /* Radial ambient */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -10%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(200,150,42,0.07) 0%, transparent 65%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Grain */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app { width: 100%; max-width: 420px; position: relative; z-index: 1; }
+
+    /* ── Header ── */
+    .header { text-align: center; margin-bottom: 36px; }
+    .header-glyph {
+      font-family: 'Playfair Display', serif;
+      font-size: 48px;
+      color: var(--gold);
+      line-height: 1;
+      margin-bottom: 12px;
+      display: block;
+      animation: fadeIn 0.6s ease both;
+    }
+    .header h1 {
+      font-family: 'Playfair Display', serif;
+      font-weight: 400;
+      font-size: 26px;
+      letter-spacing: 0.03em;
+      color: var(--text);
+      animation: fadeIn 0.6s 0.1s ease both;
+    }
+    .header p {
+      color: var(--text-muted);
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-top: 6px;
+      animation: fadeIn 0.6s 0.2s ease both;
+    }
+
+    /* ── API Key ── */
+    .field { margin-bottom: 20px; animation: fadeIn 0.6s 0.3s ease both; }
+    .field label {
+      display: block;
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 7px;
+    }
+    .field label a { color: var(--gold); text-decoration: none; }
+    .field input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 14px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field input:focus { border-color: var(--gold); }
+    .field input::placeholder { color: var(--text-dim); }
+
+    /* ── Drop Zone ── */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 52px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      animation: fadeIn 0.6s 0.4s ease both;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #drop-zone.drag-over,
+    #drop-zone:active {
+      border-color: var(--gold);
+      background: rgba(200,150,42,0.04);
+    }
+    .drop-icon { font-size: 40px; display: block; margin-bottom: 14px; }
+    .drop-title { font-family: 'Playfair Display', serif; font-size: 17px; color: var(--text); margin-bottom: 6px; }
+    .drop-sub { font-size: 10px; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+
+    /* ── Shared Banner ── */
+    #shared-banner {
+      display: none;
+      background: rgba(200,150,42,0.1);
+      border: 1px solid rgba(200,150,42,0.3);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 12px;
+      color: var(--gold-light);
+      margin-bottom: 16px;
+      text-align: center;
+      animation: fadeIn 0.3s ease both;
+    }
+
+    /* ── Loading ── */
+    #loading {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 48px 20px;
+      text-align: center;
+    }
+    .wave-bars {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      margin-bottom: 22px;
+    }
+    .wave-bar {
+      width: 4px;
+      border-radius: 2px;
+      background: var(--gold);
+      animation: wave 1s ease-in-out infinite;
+    }
+    .wave-bar:nth-child(1) { animation-delay: 0s;    height: 16px; }
+    .wave-bar:nth-child(2) { animation-delay: 0.1s;  height: 24px; }
+    .wave-bar:nth-child(3) { animation-delay: 0.2s;  height: 32px; }
+    .wave-bar:nth-child(4) { animation-delay: 0.3s;  height: 24px; }
+    .wave-bar:nth-child(5) { animation-delay: 0.4s;  height: 16px; }
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.4); }
+      50%       { transform: scaleY(1.5); }
+    }
+    #loading-label { color: var(--text-muted); font-size: 13px; }
+    #loading-file  { color: var(--text-dim);   font-size: 10px; margin-top: 6px; letter-spacing: 0.05em; }
+
+    /* ── Result ── */
+    #result {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      animation: slideUp 0.4s ease both;
+    }
+    .result-stripe {
+      height: 5px;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold));
+    }
+    .result-body { padding: 28px 22px; }
+    .result-art {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .result-art img {
+      width: 110px;
+      height: 110px;
+      border-radius: 12px;
+      object-fit: cover;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .result-art .art-placeholder {
+      width: 110px;
+      height: 110px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+    }
+    .result-label {
+      text-align: center;
+      font-size: 9px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .result-title {
+      text-align: center;
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      line-height: 1.2;
+    }
+    .result-artist { text-align: center; color: var(--gold); font-size: 14px; margin-bottom: 4px; }
+    .result-album  { text-align: center; color: var(--text-muted); font-size: 12px; margin-bottom: 3px; }
+    .result-year   { text-align: center; color: var(--text-dim); font-size: 11px; }
+    .result-links  {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 22px;
+    }
+    .result-links a {
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 11px;
+      text-decoration: none;
+      letter-spacing: 0.06em;
+      font-family: 'JetBrains Mono', monospace;
+      transition: opacity 0.15s;
+    }
+    .result-links a:active { opacity: 0.7; }
+    .link-spotify    { background: rgba(29,185,84,0.12); color: #1db954; border: 1px solid rgba(29,185,84,0.25); }
+    .link-apple      { background: rgba(252,60,68,0.12); color: #fc3c44; border: 1px solid rgba(252,60,68,0.25); }
+
+    /* ── Error ── */
+    #error {
+      display: none;
+      background: rgba(200,80,58,0.08);
+      border: 1px solid rgba(200,80,58,0.2);
+      border-radius: 12px;
+      padding: 18px 18px;
+      font-size: 13px;
+      color: #e07060;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* ── Reset Button ── */
+    #btn-reset {
+      display: none;
+      width: 100%;
+      margin-top: 14px;
+      padding: 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #btn-reset:hover { border-color: var(--border-hover); color: var(--text); }
+
+    /* ── Install Banner ── */
+    #install-banner {
+      display: none;
+      position: fixed;
+      bottom: calc(16px + var(--safe-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 32px);
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border-hover);
+      border-radius: 14px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 100;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      animation: slideUp 0.3s ease both;
+    }
+    #install-banner.hidden { display: none !important; }
+    .install-text { flex: 1; font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+    .install-text strong { color: var(--text); font-weight: 400; }
+    #btn-install {
+      background: var(--gold);
+      color: #0a0a0f;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #btn-install-close {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 10px;
+      margin-top: 32px;
+      letter-spacing: 0.05em;
+      animation: fadeIn 0.6s 0.6s ease both;
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeIn  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <span class="header-glyph">𝄞</span>
+    <h1>Song Detector</h1>
+    <p>Share any reel · Hear the name</p>
+  </div>
+
+  <div class="field">
+    <label>AudD API Key &nbsp;·&nbsp; <a href="https://audd.io" target="_blank">get free key at audd.io</a></label>
+    <input type="password" id="api-key" placeholder="Paste your API key (300 free/month)" autocomplete="off" />
+  </div>
+
+  <div id="shared-banner"></div>
+
+  <div id="drop-zone">
+    <span class="drop-icon">🎬</span>
+    <div class="drop-title">Drop a video here</div>
+    <div class="drop-sub">or tap to browse &nbsp;·&nbsp; MP4 · MOV · WebM</div>
+  </div>
+
+  <div id="loading">
+    <div class="wave-bars">
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+    </div>
+    <div id="loading-label">Extracting audio...</div>
+    <div id="loading-file"></div>
+  </div>
+
+  <div id="result">
+    <div class="result-stripe"></div>
+    <div class="result-body">
+      <div class="result-art" id="result-art"></div>
+      <div class="result-label">Identified Song</div>
+      <div class="result-title"  id="result-title"></div>
+      <div class="result-artist" id="result-artist"></div>
+      <div class="result-album"  id="result-album"></div>
+      <div class="result-year"   id="result-year"></div>
+      <div class="result-links"  id="result-links"></div>
+    </div>
+  </div>
+
+  <div id="error"></div>
+  <button id="btn-reset">↺ Try another video</button>
+
+  <div class="footer">Audio processed locally · Nothing stored on servers</div>
+</div>
+
+<!-- Install Prompt -->
+<div id="install-banner" class="hidden">
+  <div class="install-text">
+    <strong>Add to Home Screen</strong><br>
+    Then share reels directly from Instagram
+  </div>
+  <button id="btn-install">Install</button>
+  <button id="btn-install-close">×</button>
+</div>
+
+<input type="file" id="file-input" accept="video/*" style="display:none" />
+
+<script>
+// ══════════════════════════════════════════════
+//  Service Worker Registration
+// ══════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('[App] SW registered', reg.scope);
+  }).catch(err => console.warn('[App] SW failed', err));
+
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data?.type === 'SHARED_VIDEO_READY') {
+      loadSharedVideo();
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  DOM refs
+// ══════════════════════════════════════════════
+const $dropZone     = document.getElementById('drop-zone');
+const $fileInput    = document.getElementById('file-input');
+const $apiKey       = document.getElementById('api-key');
+const $loading      = document.getElementById('loading');
+const $loadingLabel = document.getElementById('loading-label');
+const $loadingFile  = document.getElementById('loading-file');
+const $result       = document.getElementById('result');
+const $error        = document.getElementById('error');
+const $btnReset     = document.getElementById('btn-reset');
+const $sharedBanner = document.getElementById('shared-banner');
+const $installBanner = document.getElementById('install-banner');
+
+// ══════════════════════════════════════════════
+//  Persist API key
+// ══════════════════════════════════════════════
+$apiKey.value = localStorage.getItem('audd_key') || '';
+$apiKey.addEventListener('input', () => localStorage.setItem('audd_key', $apiKey.value.trim()));
+
+// ══════════════════════════════════════════════
+//  Share Target — check on load
+// ══════════════════════════════════════════════
+window.addEventListener('load', () => {
+  if (location.search.includes('shared=1')) {
+    history.replaceState({}, '', '/');
+    loadSharedVideo();
+  }
+});
+
+async function loadSharedVideo() {
+  try {
+    const cache = await caches.open('song-detector-share');
+    const response = await cache.match('/pending-video');
+    if (!response) return;
+
+    const blob = await response.blob();
+    const fileName = decodeURIComponent(response.headers.get('X-File-Name') || 'shared-video.mp4');
+    await cache.delete('/pending-video');
+
+    $sharedBanner.style.display = 'block';
+    $sharedBanner.textContent = `📲 Shared: ${fileName}`;
+
+    const file = new File([blob], fileName, { type: blob.type });
+    processFile(file);
+  } catch (err) {
+    console.error('[App] loadSharedVideo error', err);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  File handling
+// ══════════════════════════════════════════════
+$dropZone.addEventListener('click', () => $fileInput.click());
+$fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+
+$dropZone.addEventListener('dragover',  e => { e.preventDefault(); $dropZone.classList.add('drag-over'); });
+$dropZone.addEventListener('dragleave', () => $dropZone.classList.remove('drag-over'));
+$dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  $dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file?.type.startsWith('video/')) processFile(file);
+  else showError('Please drop a video file (MP4, MOV, WebM).');
+});
+
+$btnReset.addEventListener('click', reset);
+
+// ══════════════════════════════════════════════
+//  Core processing
+// ══════════════════════════════════════════════
+async function processFile(file) {
+  reset(false);
+  $sharedBanner.textContent = $sharedBanner.textContent || `🎬 ${file.name}`;
+  showLoading('Extracting audio...', file.name);
+
+  try {
+    const audioBlob = await extractAudio(file);
+    showLoading('Identifying song...', file.name);
+
+    const apiKey = $apiKey.value.trim();
+    const data = await recognizeSong(audioBlob, apiKey);
+
+    if (data.status === 'success' && data.result) {
+      showResult(data.result);
+    } else if (data.status === 'success') {
+      showError("Couldn't identify the song. Make sure the music is clearly audible in the video.");
+    } else {
+      const msg = data.error?.error_message || 'Recognition failed.';
+      const hint = msg.toLowerCase().includes('token') || msg.toLowerCase().includes('key')
+        ? ' Check your API key at audd.io.' : '';
+      showError(msg + hint);
+    }
+  } catch (err) {
+    console.error(err);
+    if (err.message?.includes('decode')) {
+      showError('Could not decode this video format. Try MP4 or MOV.');
+    } else {
+      showError('Something went wrong: ' + err.message);
+    }
+  }
+}
+
+// ── Audio extraction (Web Audio API → mono WAV) ──
+async function extractAudio(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+  const buffer = await ctx.decodeAudioData(arrayBuffer);
+  ctx.close();
+  return bufferToWav(buffer, 25);
+}
+
+function bufferToWav(buffer, maxSeconds) {
+  const sampleRate = buffer.sampleRate;
+  const maxSamples = sampleRate * maxSeconds;
+  const raw = buffer.getChannelData(0);
+  const samples = raw.slice(0, Math.min(maxSamples, raw.length));
+  const dataLen = samples.length * 2;
+  const ab = new ArrayBuffer(44 + dataLen);
+  const v = new DataView(ab);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+
+  str(0, 'RIFF'); v.setUint32(4, 36 + dataLen, true);
+  str(8, 'WAVE'); str(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, dataLen, true);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([ab], { type: 'audio/wav' });
+}
+
+// ── AudD API call ──
+async function recognizeSong(audioBlob, apiKey) {
+  const form = new FormData();
+  form.append('file', audioBlob, 'audio.wav');
+  form.append('return', 'apple_music,spotify');
+  if (apiKey) form.append('api_token', apiKey);
+
+  const res = await fetch('https://api.audd.io/', { method: 'POST', body: form });
+  return res.json();
+}
+
+// ══════════════════════════════════════════════
+//  UI helpers
+// ══════════════════════════════════════════════
+function showLoading(label, fileName) {
+  $dropZone.style.display = 'none';
+  $result.style.display   = 'none';
+  $error.style.display    = 'none';
+  $btnReset.style.display = 'none';
+  $loading.style.display  = 'block';
+  $loadingLabel.textContent = label;
+  $loadingFile.textContent  = fileName || '';
+}
+
+function showResult(r) {
+  $loading.style.display = 'none';
+  $result.style.display  = 'block';
+  $btnReset.style.display = 'block';
+
+  document.getElementById('result-title').textContent  = r.title  || '—';
+  document.getElementById('result-artist').textContent = r.artist || '—';
+  document.getElementById('result-album').textContent  = r.album  || '';
+  document.getElementById('result-year').textContent   = r.release_date ? r.release_date.slice(0, 4) : '';
+
+  // Art
+  const artEl = document.getElementById('result-art');
+  const artUrl = r.apple_music?.artwork?.url?.replace('{w}x{h}', '200x200');
+  artEl.innerHTML = artUrl
+    ? `<img src="${artUrl}" alt="Album art" />`
+    : `<span class="art-placeholder">🎵</span>`;
+
+  // Links
+  const linksEl = document.getElementById('result-links');
+  linksEl.innerHTML = '';
+  if (r.spotify?.external_urls?.spotify) {
+    const a = document.createElement('a');
+    a.href = r.spotify.external_urls.spotify;
+    a.target = '_blank'; a.rel = 'noreferrer';
+    a.className = 'link-spotify'; a.textContent = '▶ Spotify';
+    linksEl.appendChild(a);
+  }
+  if (r.apple_music?.url) {
+    const a = document.createElement('a');
+    a.href = r.apple_music.url;
+    a.target = '_blank'; a.rel = 'noreferrer';
+    a.className = 'link-apple'; a.textContent = '♫ Apple Music';
+    linksEl.appendChild(a);
+  }
+}
+
+function showError(msg) {
+  $loading.style.display  = 'none';
+  $dropZone.style.display = 'block';
+  $error.style.display    = 'block';
+  $error.textContent      = msg;
+  $btnReset.style.display = 'block';
+}
+
+function reset(showDrop = true) {
+  $loading.style.display  = 'none';
+  $result.style.display   = 'none';
+  $error.style.display    = 'none';
+  $btnReset.style.display = 'none';
+  $sharedBanner.style.display = 'none';
+  $sharedBanner.textContent   = '';
+  if (showDrop) $dropZone.style.display = 'block';
+  $fileInput.value = '';
+}
+
+// ══════════════════════════════════════════════
+//  Install Prompt (A2HS)
+// ══════════════════════════════════════════════
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Only show if not already installed
+  if (!window.matchMedia('(display-mode: standalone)').matches) {
+    $installBanner.classList.remove('hidden');
+  }
+});
+
+document.getElementById('btn-install').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  $installBanner.classList.add('hidden');
+});
+
+document.getElementById('btn-install-close').addEventListener('click', () => {
+  $installBanner.classList.add('hidden');
+});
+</script>
+</body>
+</html>
