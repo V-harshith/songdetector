@@ -10,6 +10,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Song Detector</title>
+  <meta name="description" content="Identify any song from a video — free, private, and works offline as a PWA." />
   
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -671,9 +672,18 @@
     <p>Upload a video to discover the track.</p>
   </div>
 
-  <div class="glass-card field">
-    <label>AudD API Key <a href="https://audd.io" target="_blank">Get free key ›</a></label>
-    <input type="password" id="api-key" placeholder="Paste your token here..." autocomplete="off" />
+  <div class="glass-card" style="display: flex; flex-direction: column; gap: 12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="font-family:'Outfit',sans-serif;font-size:12px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--text-muted);">ACRCloud Credentials</div>
+      <a href="https://console.acrcloud.com/" target="_blank" style="font-size:12px;color:var(--accent-light);text-decoration:none;">Free account ›</a>
+    </div>
+    <input type="text" id="acr-host" placeholder="ACRCloud Host (e.g. identify-eu-west-1.acrcloud.com)" autocomplete="off" />
+    <input type="text" id="acr-key" placeholder="Access Key" autocomplete="off" />
+    <input type="password" id="acr-secret" placeholder="Access Secret" autocomplete="off" />
+    <div style="font-size:11px;color:var(--text-dim);line-height:1.5;">
+      1,000 free recognitions/month · No credit card required.
+      <a href="https://console.acrcloud.com/" target="_blank" style="color:var(--accent-light);text-decoration:none;">Sign up at acrcloud.com</a> → create a project → paste the credentials above.
+    </div>
   </div>
 
   <div id="shared-banner"></div>
@@ -780,10 +790,37 @@ const $sharedBanner = document.getElementById('shared-banner');
 const $installBanner = document.getElementById('install-banner');
 
 // ══════════════════════════════════════════════
-//  Persist API key
+//  DOM refs — ACRCloud fields
 // ══════════════════════════════════════════════
-$apiKey.value = localStorage.getItem('audd_key') || '';
-$apiKey.addEventListener('input', () => localStorage.setItem('audd_key', $apiKey.value.trim()));
+const $acrHost   = document.getElementById('acr-host');
+const $acrKey    = document.getElementById('acr-key');
+const $acrSecret = document.getElementById('acr-secret');
+
+// shared input styling for the new fields
+['acr-host', 'acr-key', 'acr-secret'].forEach(id => {
+  const el = document.getElementById(id);
+  Object.assign(el.style, {
+    width: '100%',
+    background: 'rgba(0,0,0,0.2)',
+    border: '1px solid var(--glass-border)',
+    borderRadius: '12px',
+    padding: '12px 16px',
+    color: 'var(--text)',
+    fontFamily: "'Inter', sans-serif",
+    fontSize: '13px',
+    outline: 'none',
+  });
+  el.addEventListener('focus', () => { el.style.borderColor = 'var(--accent)'; el.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.15)'; });
+  el.addEventListener('blur',  () => { el.style.borderColor = 'var(--glass-border)'; el.style.boxShadow = 'none'; });
+});
+
+// ── Persist credentials ──
+$acrHost.value   = localStorage.getItem('acr_host')   || '';
+$acrKey.value    = localStorage.getItem('acr_key')    || '';
+$acrSecret.value = localStorage.getItem('acr_secret') || '';
+$acrHost.addEventListener('input',   () => localStorage.setItem('acr_host',   $acrHost.value.trim()));
+$acrKey.addEventListener('input',    () => localStorage.setItem('acr_key',    $acrKey.value.trim()));
+$acrSecret.addEventListener('input', () => localStorage.setItem('acr_secret', $acrSecret.value.trim()));
 
 // ══════════════════════════════════════════════
 //  Share Target — check on load
@@ -841,31 +878,47 @@ $btnReset.addEventListener('click', reset);
 async function processFile(file) {
   reset(false);
   $sharedBanner.style.display = 'none';
+
+  const host   = $acrHost.value.trim();
+  const key    = $acrKey.value.trim();
+  const secret = $acrSecret.value.trim();
+
+  if (!host || !key || !secret) {
+    showError('Please enter your ACRCloud Host, Access Key, and Access Secret above. Sign up for free at acrcloud.com (1,000 recognitions/month, no credit card).');
+    return;
+  }
+
   showLoading('Extracting audio signature...', file.name);
 
   try {
     const audioBlob = await extractAudio(file);
-    showLoading('Identifying track via API...', file.name);
+    showLoading('Identifying track...', file.name);
+    const data = await recognizeSong(audioBlob, host, key, secret);
 
-    const apiKey = $apiKey.value.trim();
-    const data = await recognizeSong(audioBlob, apiKey);
-
-    if (data.status === 'success' && data.result) {
-      showResult(data.result);
-    } else if (data.status === 'success') {
-      showError("Couldn't identify the song. Make sure the music is clearly audible in the video.");
+    const status = data?.status?.code;
+    if (status === 0) {
+      // success
+      const music = data?.metadata?.music?.[0];
+      if (music) {
+        showResult(music);
+      } else {
+        showError("Couldn't identify the song. Make sure the music is clearly audible in the video.");
+      }
+    } else if (status === 1001) {
+      showError("No song recognized. Try a clip with clearer, louder music.");
+    } else if (status === 3001 || status === 3003) {
+      showError("ACRCloud credentials are incorrect. Double-check your Host, Access Key, and Secret.");
     } else {
-      const msg = data.error?.error_message || 'Recognition failed.';
-      const hint = msg.toLowerCase().includes('token') || msg.toLowerCase().includes('key')
-        ? ' Check if your API key is correctly entered.' : '';
-      showError(msg + hint);
+      showError(`Recognition failed (code ${status}): ${data?.status?.msg || 'Unknown error'}`);
     }
   } catch (err) {
     console.error(err);
     if (err.message?.includes('decode')) {
       showError('Could not decode this video format. Try converting to MP4 or MOV.');
+    } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+      showError('Network error. Check your internet connection and verify the ACRCloud host is correct.');
     } else {
-      showError('Audio extraction failed: ' + err.message);
+      showError('Something went wrong: ' + err.message);
     }
   }
 }
@@ -902,14 +955,34 @@ function bufferToWav(buffer, maxSeconds) {
   return new Blob([ab], { type: 'audio/wav' });
 }
 
-// ── AudD API call ──
-async function recognizeSong(audioBlob, apiKey) {
-  const form = new FormData();
-  form.append('file', audioBlob, 'audio.wav');
-  form.append('return', 'apple_music,spotify');
-  if (apiKey) form.append('api_token', apiKey);
+// ── ACRCloud Signature (HMAC-SHA1 via SubtleCrypto) ──
+async function hmacSha1Base64(message, secret) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
 
-  const res = await fetch('https://api.audd.io/', { method: 'POST', body: form });
+// ── ACRCloud API call ──
+async function recognizeSong(audioBlob, host, accessKey, accessSecret) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const stringToSign = `POST\n/v1/identify\n${accessKey}\naudio\n1\n${timestamp}`;
+  const signature = await hmacSha1Base64(stringToSign, accessSecret);
+
+  const form = new FormData();
+  form.append('sample',            audioBlob, 'audio.wav');
+  form.append('sample_bytes',      String(audioBlob.size));
+  form.append('access_key',        accessKey);
+  form.append('data_type',         'audio');
+  form.append('signature_version', '1');
+  form.append('signature',         signature);
+  form.append('timestamp',         String(timestamp));
+
+  const res = await fetch(`https://${host}/v1/identify`, { method: 'POST', body: form });
   return res.json();
 }
 
@@ -931,23 +1004,23 @@ function showResult(r) {
   $result.style.display  = 'block';
   $btnReset.style.display = 'block';
 
-  document.getElementById('result-title').textContent  = r.title  || 'Unknown Track';
-  document.getElementById('result-artist').textContent = r.artist || 'Unknown Artist';
-  
-  const album = r.album || '';
-  const year = r.release_date ? r.release_date.slice(0, 4) : '';
-  
-  document.getElementById('result-album').textContent = album;
-  document.getElementById('result-year').textContent = year;
-  
-  // Hide meta dot if not both
+  // ACRCloud response shape
+  const title  = r.title  || 'Unknown Track';
+  const artist = r.artists?.[0]?.name || 'Unknown Artist';
+  const album  = r.album?.name || '';
+  const year   = r.release_date ? r.release_date.slice(0, 4) : '';
+
+  document.getElementById('result-title').textContent  = title;
+  document.getElementById('result-artist').textContent = artist;
+  document.getElementById('result-album').textContent  = album;
+  document.getElementById('result-year').textContent   = year;
   document.getElementById('meta-dot').style.display = (album && year) ? 'block' : 'none';
 
-  // Art and Glow
-  const artEl = document.getElementById('result-art');
+  // Album art (ACRCloud provides album.cover or external_metadata urls)
+  const artEl  = document.getElementById('result-art');
   const glowEl = document.getElementById('result-art-glow');
-  const artUrl = r.apple_music?.artwork?.url?.replace('{w}x{h}', '400x400');
-  
+  const artUrl = r.album?.cover_url || r.external_metadata?.spotify?.album?.images?.[0]?.url || null;
+
   if (artUrl) {
     artEl.innerHTML = `<img src="${artUrl}" alt="Album art" />`;
     glowEl.style.backgroundImage = `url('${artUrl}')`;
@@ -957,23 +1030,38 @@ function showResult(r) {
     glowEl.style.display = 'none';
   }
 
-  // Links
+  // Streaming links via ACRCloud external_metadata
   const linksEl = document.getElementById('result-links');
   linksEl.innerHTML = '';
-  if (r.spotify?.external_urls?.spotify) {
+
+  const spotifyUrl = r.external_metadata?.spotify?.track?.id
+    ? `https://open.spotify.com/track/${r.external_metadata.spotify.track.id}` : null;
+  const spotifyArtist = r.external_metadata?.spotify?.artists?.[0]?.name;
+  if (spotifyUrl) {
     const a = document.createElement('a');
-    a.href = r.spotify.external_urls.spotify;
-    a.target = '_blank'; a.rel = 'noreferrer';
-    a.className = 'link-spotify'; 
-    a.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.84.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg> Open in Spotify';
+    a.href = spotifyUrl; a.target = '_blank'; a.rel = 'noreferrer';
+    a.className = 'link-spotify';
+    a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.84.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg> Open in Spotify';
     linksEl.appendChild(a);
   }
-  if (r.apple_music?.url) {
+
+  const deezerUrl = r.external_metadata?.deezer?.track?.id
+    ? `https://www.deezer.com/track/${r.external_metadata.deezer.track.id}` : null;
+  if (deezerUrl) {
     const a = document.createElement('a');
-    a.href = r.apple_music.url;
+    a.href = deezerUrl; a.target = '_blank'; a.rel = 'noreferrer';
+    a.className = 'link-apple'; // reuse apple pill style for Deezer
+    a.innerHTML = '♪ Open in Deezer';
+    linksEl.appendChild(a);
+  }
+  
+  // Fallback YouTube search if no streaming links
+  if (!spotifyUrl && !deezerUrl) {
+    const a = document.createElement('a');
+    a.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
     a.target = '_blank'; a.rel = 'noreferrer';
-    a.className = 'link-apple'; 
-    a.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.029.083c-.596.012-1.987.161-3.693 1.139C6.671 2.164 5.485 3.518 5.485 5.093c0 1.259 1.065 2.108 1.933 2.108.683 0 1.916-.482 3.655-1.14 1.645-.632 2.825-1.636 2.825-3.056 0-1.85-1.306-2.883-1.869-2.922zM12.032 6c-2.31 0-4.045 1.14-5.32 2.658C5.452 10.155 4 13.064 4 16.59c0 3.86 2.062 7.025 4.318 7.378.966.155 1.62-.258 2.868-.258 1.272 0 1.765.258 2.89.258 2.04 0 3.842-2.33 4.908-4.526 1.066-2.196 1.31-4.707.973-5.234-.407-.635-1.921-.498-2.618-1.428-.868-1.157-.962-2.585-.436-3.882-1.04-1.66-2.903-2.896-4.87-2.896z"/></svg> Open in Apple Music';
+    a.className = 'link-apple';
+    a.innerHTML = '▶ Search on YouTube';
     linksEl.appendChild(a);
   }
 }
